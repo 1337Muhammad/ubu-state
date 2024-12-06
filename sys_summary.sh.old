@@ -1,0 +1,79 @@
+#!/bin/bash
+
+#take user log file
+#read -p "Please enter your logfile path and name: i.e.(system_stat.log) " LOG_FILE
+
+#LOG_FILE=$1
+if [[ -z $LOG_FILE ]];then
+	LOG_FILE="system_stat.log"
+fi
+
+#take prefered user disk warning threshold
+#read -p "Please enter the disk space usage threshold to send you warning: enter the number without % i.e.(80) " THRESHOLD
+if [[ -z $THRESHOLD ]];then
+	THRESHOLD=80
+fi
+
+#defining some colors variables using tput
+red=`tput setaf 1`
+green=`tput setaf 2`
+reset=`tput sgr0`
+
+#defining date time vars
+current_date=$(date +"%Y-%m-%d")
+current_time=$(date +"%H:%M")
+
+echo "******************************************* ${current_date} ${current_time} *******************************************" >> $LOG_FILE
+
+#flag to ensure headeres are printed once
+headers_printed=false
+
+#iterating through each line of (df -h) to warn user if a disk exceeded 80%
+while read -r line; do
+	#storing header lines of (df -h) to print it if  a warnning will be printed
+	if [[ $line =~ "Filesystem" ]];then
+		df_header_line="$line"
+		continue
+	fi
+
+	#checking the field number 5 (usage percent) of the diskspace, replacing the $ sign with emoty to perfom the greater-than operation
+	if [[ `echo $line | awk '{print $5}' | sed 's/%//'` -gt ${THRESHOLD} ]];then
+
+		#if headers printed before then escape
+		if [[ $headers_printed == false ]];then
+			echo "         $df_header_line" >> $LOG_FILE
+			headers_printed=true
+		fi
+                #printing the warning about exceeded disk usage of 80%
+		echo "${red}Warning:${reset} $line ${red}disk is almost full!${reset}" >> $LOG_FILE
+	fi
+done <<< "$(df -h)"
+#****************************************************************************************#
+
+
+#printing current cpu usage %
+#calculating the total cpu usage from the /proc/stat file
+echo >> $LOG_FILE
+CPU=`grep 'cpu ' /proc/stat | awk '{cpu_usage=($2+$4)*100/($2+$4+$5)} END {print cpu_usage}'`
+
+#if cpu usage is above 75 print in red
+if [[ $CPU > 75 ]];then
+	echo "CPU usage: ${red}${CPU}%${reset}" >> $LOG_FILE
+else
+	echo "CPU usage: ${green}${CPU}%${reset}" >> $LOG_FILE
+fi
+#***************************************************************************************#
+
+
+#Memory usage
+echo >> $LOG_FILE
+echo "Memory:" >> $LOG_FILE
+free -h | grep Mem: | awk '{totMem=$2; usedMem=$3; freeMem=$4} END {print "Total Memory: " totMem; print "Used Memory: " usedMem; print "Free Memory: " freeMem}'  >> $LOG_FILE
+#***************************************************************************************#
+
+
+
+## top 5 processes using memory
+echo >> $LOG_FILE
+echo "Top 5 Process using memory: " >> $LOG_FILE
+ps aux --sort=-%mem | head -n 6 | awk '{print $1,$2,$3,$4,$11}' >> $LOG_FILE
